@@ -14,6 +14,8 @@ logger = structlog.get_logger()
 router = APIRouter(tags=["chat"])
 
 
+from fastapi.responses import StreamingResponse
+
 @router.post("/chat", response_model=ChatResponse)
 async def send_message(
     request: ChatRequest,
@@ -25,7 +27,6 @@ async def send_message(
         return ChatResponse(
             conversation_id=result["conversation_id"],
             message=MessageResponse.from_mongo(result["message"]),
-            passages=result["passages"],
             intent=result["intent"],
             processing_time_ms=result["processing_time_ms"],
         )
@@ -34,6 +35,21 @@ async def send_message(
     except Exception as e:
         logger.error("Chat processing error", error=str(e))
         raise HTTPException(status_code=500, detail="An error occurred processing your message")
+
+@router.post("/chat/stream")
+async def send_message_stream(
+    request: ChatRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """Send a message and get a streaming RAG-powered response (SSE)."""
+    try:
+        return StreamingResponse(
+            chat_service.stream_chat(request, user_id),
+            media_type="text/event-stream"
+        )
+    except Exception as e:
+        logger.error("Stream processing error", error=str(e))
+        raise HTTPException(status_code=500, detail="An error occurred processing your message stream")
 
 
 @router.get("/conversations", response_model=ConversationListResponse)

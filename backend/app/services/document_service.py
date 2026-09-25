@@ -83,6 +83,8 @@ async def list_documents(user_id: str, skip: int = 0, limit: int = 50) -> tuple[
 async def delete_document(document_id: str, user_id: str) -> bool:
     """Delete document and all associated data."""
     from app.ingestion.indexer import delete_document_chunks, delete_document_sections
+    from app.ingestion.pages import delete_document_pages
+    from app.services.notes_service import delete_document_notes
 
     doc = await documents_col().find_one({"_id": document_id, "user_id": user_id})
     if not doc:
@@ -93,9 +95,15 @@ async def delete_document(document_id: str, user_id: str) -> bool:
     if file_path and os.path.exists(file_path):
         os.remove(file_path)
 
-    # Delete chunks and sections
+    # Delete chunks, sections, pages, and notes
     await delete_document_chunks(document_id)
     await delete_document_sections(document_id)
+    await delete_document_pages(document_id)
+    await delete_document_notes(document_id)
+
+    # Invalidate vector cache
+    from app.rag.retriever import invalidate_document_cache
+    invalidate_document_cache(document_id)
 
     # Delete document record
     await documents_col().delete_one({"_id": document_id})
@@ -150,15 +158,16 @@ async def _process_document_background(
     file_path: str,
 ) -> None:
     """Full document processing pipeline run as background task."""
-    from app.ingestion.parser import parse_document
-    from app.ingestion.structure_detector import detect_structure
-    from app.ingestion.chunker import chunk_document
-    from app.ingestion.indexer import store_sections, store_chunks_with_embeddings
-    from app.rag.embeddings import embedding_service
+    from app.ingestion.pipeline import run_ingestion
 
     version_id = f"v_{uuid.uuid4().hex[:8]}"
 
     try:
+        def on_progress(stage: str, progress: int):
+            # This runs synchronously in the event loop, so we should schedule the updates instead of blocking.
+            # But the callback doesn't have an async context. We'll capture progress and update after each step.
+            pass
+
         # ── Update status: processing ──────────────────────────────────────
         await _update_job(job_id, {
             "status": "processing",
@@ -171,48 +180,7 @@ async def _process_document_background(
             {"$set": {"status": DocumentStatus.processing, "updated_at": _now()}},
         )
 
-        # ── Stage 1: Parse document ────────────────────────────────────────
-        logger.info("Stage: extraction", document_id=document_id)
-        loaded_doc = parse_document(file_path)
-        await _update_job(job_id, {
-            "current_stage": "structure_detection",
-            "pages_processed": loaded_doc.total_pages,
-            "progress": 20,
-        })
-
-        # ── Stage 2: Detect structure ──────────────────────────────────────
-        logger.info("Stage: structure_detection", document_id=document_id)
-        structure = detect_structure(loaded_doc)
-        await store_sections(structure.sections, document_id, version_id)
-        await _update_job(job_id, {
-            "current_stage": "chunking",
-            "progress": 35,
-        })
-
-        # ── Stage 3: Chunk ─────────────────────────────────────────────────
-        logger.info("Stage: chunking", document_id=document_id)
-        chunks = chunk_document(loaded_doc, structure, document_id, version_id)
-        await _update_job(job_id, {
-            "current_stage": "embedding",
-            "chunks_created": len(chunks),
-            "progress": 50,
-        })
-
-        # ── Stage 4: Generate embeddings ───────────────────────────────────
-        logger.info("Stage: embedding", document_id=document_id, chunks=len(chunks))
-        texts = [c.content for c in chunks]
-        embeddings = embedding_service.embed_texts(texts, batch_size=32)
-        await _update_job(job_id, {
-            "current_stage": "indexing",
-            "embeddings_created": len(embeddings),
-            "progress": 80,
-        })
-
-        # ── Stage 5: Store chunks + embeddings ─────────────────────────────
-        logger.info("Stage: indexing", document_id=document_id)
-        stored = await store_chunks_with_embeddings(
-            chunks, embeddings, document_id, version_id
-        )
+        stored = await run_ingestion(document_id, file_path, version_id)
 
         # ── Done ───────────────────────────────────────────────────────────
         now = _now()
@@ -223,13 +191,18 @@ async def _process_document_background(
             "embeddings_created": stored,
             "completed_at": now,
         })
+        
+        # We need total pages for document status
+        from app.db.mongodb import document_pages_col
+        total_pages = await document_pages_col().count_documents({"document_id": document_id})
+        
         await documents_col().update_one(
             {"_id": document_id},
             {"$set": {
                 "status": DocumentStatus.ready,
                 "updated_at": now,
                 "processing": {
-                    "pages": loaded_doc.total_pages,
+                    "pages": total_pages,
                     "chunks": stored,
                     "embedding_model": settings.embedding_model,
                     "processed_at": now,

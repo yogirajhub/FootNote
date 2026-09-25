@@ -4,6 +4,7 @@ EmbeddingService — Hugging Face Sentence Transformers.
 Model is fully configurable via EMBEDDING_MODEL env var.
 Singleton pattern to avoid reloading the model on every request.
 """
+import asyncio
 from typing import List
 from app.config.settings import settings
 import structlog
@@ -28,12 +29,24 @@ class EmbeddingService:
     Wraps Sentence Transformers for generating text embeddings.
     Model is loaded lazily on first use.
     """
+    
+    def warmup(self):
+        """Warmup the model by loading it into memory."""
+        _get_model()
+        
+    async def async_warmup(self):
+        """Async wrapper for model warmup."""
+        await asyncio.to_thread(self.warmup)
 
     def embed_text(self, text: str) -> List[float]:
         """Embed a single string."""
         model = _get_model()
         vector = model.encode(text, convert_to_numpy=True)
         return vector.tolist()
+
+    async def aembed_text(self, text: str) -> List[float]:
+        """Async wrapper for single string embedding."""
+        return await asyncio.to_thread(self.embed_text, text)
 
     def embed_texts(self, texts: List[str], batch_size: int = 32) -> List[List[float]]:
         """Embed a list of strings in batches."""
@@ -46,6 +59,10 @@ class EmbeddingService:
             show_progress_bar=False,
         )
         return [v.tolist() for v in vectors]
+        
+    async def aembed_texts(self, texts: List[str], batch_size: int = 32) -> List[List[float]]:
+        """Async wrapper for batch string embedding."""
+        return await asyncio.to_thread(self.embed_texts, texts, batch_size)
 
     @property
     def dimensions(self) -> int:

@@ -1,5 +1,5 @@
 import { api } from './api';
-import type { DocumentResponse, ProcessingJobResponse, SectionResponse } from '../types/api';
+import type { DocumentResponse, ProcessingJobResponse, SectionResponse, PageResponse } from '../types/api';
 
 export const documentsService = {
   async upload(formData: FormData): Promise<DocumentResponse> {
@@ -32,6 +32,11 @@ export const documentsService = {
 
   async getSections(id: string): Promise<{ sections: SectionResponse[] }> {
     const { data } = await api.get<{ sections: SectionResponse[] }>(`/documents/${id}/sections`);
+    return data;
+  },
+
+  async getPage(id: string, page: number): Promise<PageResponse> {
+    const { data } = await api.get<PageResponse>(`/documents/${id}/pages/${page}`);
     return data;
   },
 };

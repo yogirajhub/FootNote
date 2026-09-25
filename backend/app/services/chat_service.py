@@ -54,8 +54,9 @@ async def get_conversation_history(conversation_id: str, limit: int = 10) -> Lis
     """Get recent messages from a conversation as a list of dicts."""
     cursor = messages_col().find(
         {"conversation_id": conversation_id}
-    ).sort("created_at", 1).limit(limit)
+    ).sort("created_at", -1).limit(limit)
     messages = await cursor.to_list(length=limit)
+    messages.reverse()  # return in chronological order
     return [{"role": m["role"], "content": m["content"]} for m in messages]
 
 
@@ -95,20 +96,24 @@ async def process_chat(request: ChatRequest, user_id: str) -> dict:
     5. Save messages
     6. Return response
     """
-    # Load document
-    doc = await documents_col().find_one({"_id": request.document_id, "user_id": user_id})
-    if not doc:
-        raise ValueError(f"Document not found: {request.document_id}")
-    if doc["status"] != "ready":
-        raise ValueError(f"Document is not ready (status: {doc['status']}). Please wait for processing to complete.")
-
-    # Get or create conversation
-    conversation = await get_or_create_conversation(
+    import asyncio
+    
+    # Load document and get/create conversation in parallel
+    doc_task = documents_col().find_one({"_id": request.document_id, "user_id": user_id})
+    conv_task = get_or_create_conversation(
         user_id=user_id,
         document_id=request.document_id,
         conversation_id=request.conversation_id,
         first_message=request.message,
     )
+    
+    doc, conversation = await asyncio.gather(doc_task, conv_task)
+    
+    if not doc:
+        raise ValueError(f"Document not found: {request.document_id}")
+    if doc["status"] != "ready":
+        raise ValueError(f"Document is not ready (status: {doc['status']}). Please wait for processing to complete.")
+
     conversation_id = conversation["_id"]
 
     # Save user message
@@ -156,11 +161,71 @@ async def process_chat(request: ChatRequest, user_id: str) -> dict:
     return {
         "conversation_id": conversation_id,
         "message": assistant_msg,
-        "passages": passages_data,
         "intent": result.intent.value,
         "processing_time_ms": result.latency_ms,
     }
 
+
+async def stream_chat(request: ChatRequest, user_id: str):
+    import asyncio
+    import json
+    from app.rag.pipeline import run_rag_pipeline_stream
+    
+    doc_task = documents_col().find_one({"_id": request.document_id, "user_id": user_id})
+    conv_task = get_or_create_conversation(
+        user_id=user_id,
+        document_id=request.document_id,
+        conversation_id=request.conversation_id,
+        first_message=request.message,
+    )
+    
+    doc, conversation = await asyncio.gather(doc_task, conv_task)
+    
+    if not doc:
+        yield f"data: {json.dumps({'error': 'Document not found'})}\n\n"
+        return
+    if doc["status"] != "ready":
+        yield f"data: {json.dumps({'error': 'Document is not ready'})}\n\n"
+        return
+
+    conversation_id = conversation["_id"]
+    await save_message(conversation_id, "user", request.message)
+    history = await get_conversation_history(conversation_id, limit=8)
+
+    # Initialize accumulation for saving later
+    full_answer = []
+    intent = None
+    passages_data = [] # Passages will be passed in done metadata in future if needed
+    
+    stream = run_rag_pipeline_stream(
+        query=request.message,
+        document_id=request.document_id,
+        document_title=doc["title"],
+        conversation_history=history[:-1],
+        document_ids=request.document_ids if request.mode == "library" else None,
+    )
+    
+    async for chunk in stream:
+        # Just yield to the client and accumulate locally
+        if chunk.startswith("data: "):
+            try:
+                data = json.loads(chunk[6:])
+                if data["type"] == "delta":
+                    full_answer.append(data["content"])
+                elif data["type"] == "metadata":
+                    intent = data.get("intent")
+            except json.JSONDecodeError:
+                pass
+        yield chunk
+        
+    # After stream finishes, save the final message to history
+    await save_message(
+        conversation_id=conversation_id,
+        role="assistant",
+        content="".join(full_answer),
+        passages=[], # We don't have passages returned via stream right now; this is fine per phase 2
+        intent=intent,
+    )
 
 async def list_conversations(user_id: str, document_id: Optional[str] = None) -> tuple[List[dict], int]:
     query: Dict = {"user_id": user_id}

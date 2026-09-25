@@ -11,7 +11,20 @@ _db: AsyncIOMotorDatabase | None = None
 
 async def connect_to_mongo() -> None:
     global _client, _db
-    logger.info("Connecting to MongoDB", uri=settings.mongodb_uri)
+    
+    # Mask credentials for logging
+    uri_to_log = settings.mongodb_uri
+    if "@" in uri_to_log:
+        prefix, suffix = uri_to_log.split("@", 1)
+        if "://" in prefix:
+            scheme, auth = prefix.split("://", 1)
+            if ":" in auth:
+                username, _ = auth.split(":", 1)
+                uri_to_log = f"{scheme}://{username}:***@{suffix}"
+            else:
+                uri_to_log = f"{scheme}://***@{suffix}"
+    
+    logger.info("Connecting to MongoDB", uri=uri_to_log)
     _client = AsyncIOMotorClient(settings.mongodb_uri)
     _db = _client[settings.mongodb_database]
     await _create_indexes()
@@ -61,6 +74,12 @@ def messages_col():
 def bookmarks_col():
     return get_collection("bookmarks")
 
+def notes_col():
+    return get_collection("notes")
+
+def document_pages_col():
+    return get_collection("document_pages")
+
 def feedback_col():
     return get_collection("feedback")
 
@@ -100,5 +119,11 @@ async def _create_indexes() -> None:
     # bookmarks
     await db.bookmarks.create_index([("user_id", ASCENDING)])
     await db.bookmarks.create_index([("document_id", ASCENDING)])
+
+    # notes
+    await db.notes.create_index([("user_id", ASCENDING), ("document_id", ASCENDING)])
+
+    # document_pages
+    await db.document_pages.create_index([("document_id", ASCENDING), ("page_number", ASCENDING)], unique=True)
 
     logger.info("MongoDB indexes created")

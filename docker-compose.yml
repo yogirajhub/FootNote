@@ -49,6 +49,8 @@ services:
       - /app/.next
     env_file:
       - .env
+    environment:
+      - INTERNAL_API_URL=http://backend:8000/api
     depends_on:
       - backend
     command: npm run dev

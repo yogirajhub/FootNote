@@ -1,6 +1,9 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+const isServer = typeof window === 'undefined';
+const API_URL = isServer
+  ? (process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://backend:8000/api')
+  : '/api';
 // Demo user MVP
 const USER_ID = 'demo_user_001';
 

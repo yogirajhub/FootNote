@@ -7,10 +7,12 @@ FootNote is a document-grounded conversational RAG platform. Upload books, resea
 ## Features
 
 - **Document-Agnostic Ingestion:** Supports PDF, EPUB, DOCX, TXT, and Markdown.
-- **Structure-Aware Processing:** Detects chapters, sections, and paragraphs automatically.
-- **Document-Scoped RAG:** Prevents cross-contamination by searching only within the active document unless explicitly told otherwise.
-- **Rich Chat UI:** Displays exact source citations (chapter/page), quoted passages, and plain-English explanations.
-- **Interactive Passages:** "Discuss this passage" mode allows you to dive deep into specific concepts.
+- **Structure-Aware Processing:** Detects chapters, sections, and pages automatically.
+- **Document-Scoped RAG:** Prevents cross-contamination by searching only within the active document.
+- **Rich 3-Pane Workspace:** Combines a Table of Contents sidebar, a live document reader, and a chat pane.
+- **Streaming LLM Responses:** Fast, token-by-token streaming via SSE.
+- **Interactive Reading:** Select any text in the reader to instantly ask the AI to explain it.
+- **Notepad:** Save important AI explanations and your own notes directly linked to document pages.
 - **Safety Layer:** Includes crisis detection and mental-health disclaimers for sensitive texts.
 
 ## Architecture & Tech Stack
@@ -23,9 +25,9 @@ FootNote is a document-grounded conversational RAG platform. Upload books, resea
 
 ### Backend
 - **Python / FastAPI**
-- **MongoDB** (Atlas Vector Search or local via Docker)
-- **Hugging Face Sentence Transformers** (`all-MiniLM-L6-v2`)
-- **Groq API** (`openai/gpt-oss-20b`)
+- **MongoDB** (Atlas Vector Search or fallback to in-memory numpy cosine similarity)
+- **Hugging Face Sentence Transformers** (`all-MiniLM-L6-v2` run asynchronously)
+- **Groq API** (`llama3-70b-8192` or similar via `AsyncGroq` singleton)
 
 ---
 
@@ -50,16 +52,19 @@ docker compose up --build
 - **Backend API:** http://localhost:8000
 - **API Docs (Swagger):** http://localhost:8000/docs
 
-### 3. Ingesting Documents (CLI)
+### 3. Backfill Pages (Important for v2)
 
-You can ingest documents via the Web UI (Upload Modal) or using the provided CLI scripts:
+If you are upgrading from FootNote v1, you must run the backfill script to extract raw pages for the new Reader pane:
 
 ```bash
-# Ingest a general document
-python scripts/ingest_document.py --file path/to/document.pdf --title "My Document"
+python scripts/backfill_pages.py --all
+```
 
-# Ingest a book specifically
-python scripts/ingest_book.py --file path/to/book.epub --title "My Book" --author "Author Name"
+### 4. Benchmark Latency
+
+Run the benchmark script to measure extraction, chunking, and embedding times:
+```bash
+python scripts/benchmark_latency.py
 ```
 
 ---
@@ -107,10 +112,3 @@ Run the cleanup script to remove orphaned vectors if documents were deleted impr
 ```bash
 python scripts/cleanup_vectors.py
 ```
-
-## Future Improvements
-
-- **Full Authentication:** The architecture supports user_ids; implement a JWT/OAuth flow.
-- **Cross-Encoder Reranking:** Replace the MVP Cosine reranker with a dedicated cross-encoder model.
-- **Cloud Vector Search:** Swap the local MongoDB for a MongoDB Atlas cluster to enable true scalable vector search.
-- **Streaming UI:** Implement SSE (Server-Sent Events) in the UI to stream LLM responses token-by-token.

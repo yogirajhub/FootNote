@@ -62,4 +62,40 @@ class CosineReranker(BaseReranker):
 
 
 # Default reranker instance (swap this to use a cross-encoder)
-reranker = CosineReranker()
+class PassThroughReranker(BaseReranker):
+    """
+    Sorts chunks by their retrieval score (assumed to be populated) and deduplicates
+    chunks that have > 85% character overlap.
+    """
+    
+    def rerank(self, query: str, chunks: List[RetrievedChunk], top_k: int) -> List[RetrievedChunk]:
+        if not chunks:
+            return []
+            
+        # Sort by score descending (assuming retriever assigned scores)
+        sorted_chunks = sorted(chunks, key=lambda c: getattr(c, 'score', 0.0), reverse=True)
+        
+        unique_chunks = []
+        for chunk in sorted_chunks:
+            is_duplicate = False
+            for u in unique_chunks:
+                # simple char-overlap check to drop > 85% overlap
+                intersection = set(chunk.content) & set(u.content)
+                overlap_ratio = len(intersection) / max(len(chunk.content), 1)
+                if overlap_ratio > 0.85:
+                    is_duplicate = True
+                    break
+            
+            if not is_duplicate:
+                unique_chunks.append(chunk)
+                
+            if len(unique_chunks) >= top_k:
+                break
+                
+        logger.info("Reranking complete", input=len(chunks), output=len(unique_chunks))
+        return unique_chunks
+
+if settings.reranker_type == "passthrough":
+    reranker = PassThroughReranker()
+else:
+    reranker = CosineReranker()

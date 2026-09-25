@@ -32,21 +32,18 @@ class MessageResponse(BaseModel):
     conversation_id: str
     role: Literal["user", "assistant"]
     content: str
-    passages: Optional[List[PassageResponse]] = None
+    evidence: Optional[List[dict]] = None
     intent: Optional[str] = None
     created_at: datetime
 
     @classmethod
     def from_mongo(cls, doc: dict) -> "MessageResponse":
-        passages = None
-        if doc.get("passages"):
-            passages = [PassageResponse(**p) for p in doc["passages"]]
         return cls(
             id=str(doc["_id"]),
             conversation_id=doc["conversation_id"],
             role=doc["role"],
             content=doc["content"],
-            passages=passages,
+            evidence=doc.get("evidence"),
             intent=doc.get("intent"),
             created_at=doc["created_at"],
         )
@@ -87,6 +84,5 @@ class ConversationDetailResponse(BaseModel):
 class ChatResponse(BaseModel):
     conversation_id: str
     message: MessageResponse
-    passages: List[PassageResponse]
     intent: str
     processing_time_ms: Optional[int] = None

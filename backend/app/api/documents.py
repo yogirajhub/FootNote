@@ -141,3 +141,37 @@ async def get_document_sections(document_id: str, user_id: str = Depends(get_cur
     ).sort("order", 1)
     sections = await cursor.to_list(length=500)
     return {"sections": [SectionResponse.from_mongo(s) for s in sections]}
+
+
+@router.get("/{document_id}/pages/{page_number}")
+async def get_document_page(
+    document_id: str,
+    page_number: int,
+    user_id: str = Depends(get_current_user),
+):
+    """Get a single page of a document by page number."""
+    # Ownership check
+    doc = await document_service.get_document(document_id, user_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    from app.ingestion.pages import get_page
+    from app.db.mongodb import document_pages_col
+    
+    page = await get_page(document_id, page_number)
+    if not page:
+        raise HTTPException(status_code=404, detail=f"Page {page_number} not found")
+
+    total_pages = await document_pages_col().count_documents({"document_id": document_id})
+    
+    # Extract headings from page content (first lines that look like headings)
+    content_lines = (page.get("content") or "").splitlines()
+    headings = [l.strip() for l in content_lines[:5] if l.strip() and len(l.strip()) < 120 and l.strip().isupper()]
+
+    return {
+        "page": page_number,
+        "total_pages": total_pages,
+        "content": page.get("content", ""),
+        "headings": headings,
+    }
+

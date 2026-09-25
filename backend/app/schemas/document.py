@@ -107,6 +107,6 @@ class SectionResponse(BaseModel):
             title=doc["title"],
             level=doc["level"],
             parent_id=doc.get("parent_id"),
-            page=doc.get("page"),
+            page=doc.get("page_number", doc.get("page")),
             order=doc.get("order", 0),
         )
