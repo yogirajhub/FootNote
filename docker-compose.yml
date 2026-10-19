@@ -30,6 +30,12 @@ services:
       - .env
     environment:
       - MONGODB_URI=mongodb://mongodb:27017
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
     depends_on:
       mongodb:
         condition: service_healthy
@@ -39,21 +45,20 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        INTERNAL_API_URL: http://backend:8000/api
     container_name: footnote_frontend
     restart: unless-stopped
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
     env_file:
       - .env
     environment:
-      - INTERNAL_API_URL=http://backend:8000/api
+      INTERNAL_API_URL: http://backend:8000/api
+      NODE_ENV: production
     depends_on:
-      - backend
-    command: npm run dev
+      backend:
+        condition: service_healthy
 
 volumes:
   mongo_data:

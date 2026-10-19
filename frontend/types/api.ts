@@ -23,6 +23,7 @@ export interface DocumentResponse {
   document_type: DocumentType;
   file: FileInfo;
   status: DocumentStatus;
+  is_favorite?: boolean;
   processing?: ProcessingInfo;
   created_at: string;
   updated_at: string;
@@ -55,6 +56,13 @@ export interface PageResponse {
   total_pages: number;
   content: string;
   headings: string[];
+}
+
+export interface DocumentPageContent {
+  page: number;
+  content: string;
+  heading: string;
+  preview: string;
 }
 
 // ── Evidence & Panels ──────────────────────────────────────────────────────────
@@ -142,11 +150,20 @@ export interface ChatResponse {
 
 // ── SSE Stream Events ──────────────────────────────────────────────────────────
 
+export interface SourceInfo {
+  page?: number;
+  chapter?: string;
+  section?: string;
+}
+
 export interface SSEMetadata {
   type: 'metadata';
   intent: string;
   rewritten_query: string;
+  sources?: SourceInfo[];
+  conversation_id?: string;
 }
+
 
 export interface SSEDelta {
   type: 'delta';

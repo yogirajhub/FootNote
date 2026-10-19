@@ -76,3 +76,15 @@ async def get_conversation(
         conversation=ConversationResponse.from_mongo(detail["conversation"]),
         messages=[MessageResponse.from_mongo(m) for m in detail["messages"]],
     )
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    success = await chat_service.delete_conversation(conversation_id, user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"message": "Conversation deleted successfully"}
+

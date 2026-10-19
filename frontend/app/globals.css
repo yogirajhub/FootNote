@@ -54,6 +54,62 @@
   font-family: var(--font-lora), serif;
 }
 
+/* Transparent text over the PDF page so lines can be copied without changing the page. */
+.pdf-page-sheet {
+  position: relative;
+  --user-unit: 1;
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+}
+
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+  caret-color: transparent;
+  --user-unit: 1;
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate, 0deg)) scaleX(var(--scale-x, 1)) scale(var(--min-font-size-inv));
+}
+
+.textLayer .markedContent {
+  display: contents;
+}
+
+.textLayer ::selection {
+  background: color-mix(in srgb, var(--color-primary) 35%, transparent);
+}
+
+body {
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
 /* Dark mode overwrites (simple approach for v4 if dark mode is active) */
 @media (prefers-color-scheme: dark) {
   :root {
@@ -72,3 +128,64 @@
     --color-input: hsl(12 6% 15%);
   }
 }
+
+/* Clean, normal upright typography for Proof excerpt (not tilted/italic, max 3 lines) */
+.proof-quote {
+  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-style: normal;
+  font-weight: 450;
+  font-size: 0.875rem; /* 14px */
+  line-height: 1.5;
+  letter-spacing: normal;
+  color: color-mix(in srgb, var(--color-foreground) 90%, transparent);
+  text-rendering: optimizeLegibility;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Polished markdown tables for detailed explanations */
+.prose table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 1rem 0;
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+  font-size: 0.8125rem;
+}
+
+.prose th {
+  background-color: color-mix(in srgb, var(--color-secondary) 85%, transparent);
+  color: var(--color-foreground);
+  font-weight: 600;
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.prose td {
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+  color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
+  vertical-align: top;
+  line-height: 1.55;
+}
+
+.prose tr:last-child td {
+  border-bottom: none;
+}
+
+.prose tr:nth-child(even) td {
+  background-color: color-mix(in srgb, var(--color-secondary) 30%, transparent);
+}
+
+.prose tr:hover td {
+  background-color: color-mix(in srgb, var(--color-primary) 6%, transparent);
+}
+

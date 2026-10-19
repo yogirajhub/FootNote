@@ -214,6 +214,8 @@ async def stream_chat(request: ChatRequest, user_id: str):
                     full_answer.append(data["content"])
                 elif data["type"] == "metadata":
                     intent = data.get("intent")
+                    data["conversation_id"] = conversation_id
+                    chunk = f"data: {json.dumps(data)}\n\n"
             except json.JSONDecodeError:
                 pass
         yield chunk
@@ -245,3 +247,13 @@ async def get_conversation_detail(conversation_id: str, user_id: str) -> Optiona
     cursor = messages_col().find({"conversation_id": conversation_id}).sort("created_at", 1)
     messages = await cursor.to_list(length=200)
     return {"conversation": conv, "messages": messages}
+
+
+async def delete_conversation(conversation_id: str, user_id: str) -> bool:
+    """Delete a conversation and all its messages."""
+    res = await conversations_col().delete_one({"_id": conversation_id, "user_id": user_id})
+    if res.deleted_count > 0:
+        await messages_col().delete_many({"conversation_id": conversation_id})
+        return True
+    return False
+

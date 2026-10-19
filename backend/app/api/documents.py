@@ -6,9 +6,10 @@ import uuid
 import shutil
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, status, BackgroundTasks
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.config.settings import settings
 from app.schemas.document import (
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 @router.post("", response_model=DocumentResponse, status_code=201)
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     title: str = Form(...),
     author: Optional[str] = Form(None),
@@ -43,9 +45,8 @@ async def upload_document(
             detail=f"Unsupported file type: .{ext}. Supported: {', '.join(settings.allowed_extensions)}",
         )
 
-    # Validate size
-    content = await file.read()
-    if len(content) > settings.max_upload_size:
+    # Validate size upfront if possible
+    if file.size and file.size > settings.max_upload_size:
         raise HTTPException(
             status_code=413,
             detail=f"File too large. Maximum size: {settings.max_upload_size // 1024 // 1024}MB",
@@ -57,8 +58,18 @@ async def upload_document(
     safe_name = f"{uuid.uuid4().hex}_{Path(filename).stem[:50]}.{ext}"
     file_path = str(upload_dir / safe_name)
 
-    with open(file_path, "wb") as f:
-        f.write(content)
+    import aiofiles
+    file_size = 0
+    async with aiofiles.open(file_path, "wb") as f:
+        while chunk := await file.read(1024 * 1024):
+            file_size += len(chunk)
+            if file_size > settings.max_upload_size:
+                # Clean up partial file
+                import os
+                f.close()
+                os.remove(file_path)
+                raise HTTPException(status_code=413, detail="File too large.")
+            await f.write(chunk)
 
     # Create document and trigger processing
     doc = await document_service.create_document(
@@ -69,8 +80,9 @@ async def upload_document(
         document_type=document_type,
         filename=filename,
         file_format=ext,
-        file_size=len(content),
+        file_size=file_size,
         file_path=file_path,
+        background_tasks=background_tasks,
     )
 
     return DocumentResponse.from_mongo(doc)
@@ -95,6 +107,30 @@ async def get_document(document_id: str, user_id: str = Depends(get_current_user
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return DocumentResponse.from_mongo(doc)
+
+
+@router.get("/{document_id}/file")
+async def get_original_file(document_id: str, user_id: str = Depends(get_current_user)):
+    """Stream the original upload for the reader. Parsing and embeddings are untouched."""
+    doc = await document_service.get_document(document_id, user_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    from app.services.original_file_service import content_type_for, ensure_original_file, stream_original_file
+
+    file_info = doc.get("file") or {}
+    try:
+        storage_id = await ensure_original_file(doc)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Original file is not stored for this document")
+
+    filename = file_info.get("filename") or "document"
+    media_type = content_type_for(file_info.get("format") or "")
+    return StreamingResponse(
+        stream_original_file(storage_id),
+        media_type=media_type,
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(filename)}"},
+    )
 
 
 @router.patch("/{document_id}", response_model=DocumentResponse)
@@ -141,6 +177,19 @@ async def get_document_sections(document_id: str, user_id: str = Depends(get_cur
     ).sort("order", 1)
     sections = await cursor.to_list(length=500)
     return {"sections": [SectionResponse.from_mongo(s) for s in sections]}
+
+
+@router.get("/{document_id}/pages")
+async def list_document_pages(document_id: str, user_id: str = Depends(get_current_user)):
+    """Every stored page, with the opening lines used by the contents sidebar."""
+    doc = await document_service.get_document(document_id, user_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    from app.ingestion.pages import list_pages
+
+    pages = await list_pages(document_id)
+    return {"total_pages": len(pages), "pages": pages}
 
 
 @router.get("/{document_id}/pages/{page_number}")

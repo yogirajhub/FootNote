@@ -5,7 +5,7 @@ Model is fully configurable via EMBEDDING_MODEL env var.
 Singleton pattern to avoid reloading the model on every request.
 """
 import asyncio
-from typing import List
+from typing import List, Optional, Any
 from app.config.settings import settings
 import structlog
 
@@ -60,9 +60,33 @@ class EmbeddingService:
         )
         return [v.tolist() for v in vectors]
         
-    async def aembed_texts(self, texts: List[str], batch_size: int = 32) -> List[List[float]]:
+    async def aembed_texts(self, texts: List[str], batch_size: int = 64) -> List[List[float]]:
         """Async wrapper for batch string embedding."""
         return await asyncio.to_thread(self.embed_texts, texts, batch_size)
+
+    async def aembed_texts_with_progress(
+        self,
+        texts: List[str],
+        batch_size: int = 64,
+        on_batch_done: Optional[Any] = None,
+    ) -> List[List[float]]:
+        """Async batch embedding with incremental progress notifications."""
+        if not texts:
+            return []
+        
+        all_vectors: List[List[float]] = []
+        total = len(texts)
+        
+        for i in range(0, total, batch_size):
+            batch = texts[i : i + batch_size]
+            batch_vectors = await asyncio.to_thread(self.embed_texts, batch, batch_size)
+            all_vectors.extend(batch_vectors)
+            if on_batch_done:
+                res = on_batch_done(len(all_vectors), total)
+                if asyncio.iscoroutine(res):
+                    await res
+                    
+        return all_vectors
 
     @property
     def dimensions(self) -> int:

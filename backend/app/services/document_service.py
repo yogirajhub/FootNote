@@ -7,7 +7,7 @@ import uuid
 import shutil
 import asyncio
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional, List, Any
 from pathlib import Path
 
 from app.config.settings import settings
@@ -32,8 +32,9 @@ async def create_document(
     file_format: str,
     file_size: int,
     file_path: str,
+    background_tasks: Optional[Any] = None,
 ) -> dict:
-    """Create document record and trigger background processing."""
+    """Create document record and trigger background processing with low latency."""
     doc_id = f"doc_{uuid.uuid4().hex[:16]}"
     now = _now()
 
@@ -49,6 +50,7 @@ async def create_document(
             "format": file_format,
             "size": file_size,
             "path": file_path,
+            "storage_id": None,
         },
         "status": DocumentStatus.queued,
         "processing": None,
@@ -63,7 +65,10 @@ async def create_document(
     job_id = await _create_processing_job(doc_id)
 
     # Trigger background processing
-    asyncio.create_task(_process_document_background(doc_id, job_id, file_path))
+    if background_tasks:
+        background_tasks.add_task(_process_document_background, doc_id, job_id, file_path)
+    else:
+        asyncio.create_task(_process_document_background(doc_id, job_id, file_path))
 
     return doc
 
@@ -90,10 +95,14 @@ async def delete_document(document_id: str, user_id: str) -> bool:
     if not doc:
         return False
 
-    # Delete file
-    file_path = doc.get("file", {}).get("path")
+    # Delete file on disk and the original copy in the database
+    file_info = doc.get("file") or {}
+    file_path = file_info.get("path")
     if file_path and os.path.exists(file_path):
         os.remove(file_path)
+
+    from app.services.original_file_service import delete_original_file
+    await delete_original_file(document_id, file_info.get("storage_id"))
 
     # Delete chunks, sections, pages, and notes
     await delete_document_chunks(document_id)
@@ -163,10 +172,28 @@ async def _process_document_background(
     version_id = f"v_{uuid.uuid4().hex[:8]}"
 
     try:
-        def on_progress(stage: str, progress: int):
-            # This runs synchronously in the event loop, so we should schedule the updates instead of blocking.
-            # But the callback doesn't have an async context. We'll capture progress and update after each step.
-            pass
+        # Asynchronously ensure original file is stored in GridFS in the background
+        from app.services.original_file_service import ensure_original_file
+        try:
+            doc = await documents_col().find_one({"_id": document_id})
+            if doc and not (doc.get("file") or {}).get("storage_id"):
+                await ensure_original_file(doc)
+        except Exception as file_err:
+            logger.warning("Could not persist original file into GridFS during background task", error=str(file_err), document_id=document_id)
+
+        # ── Real-time progress reporter ─────────────────────────────────────
+        async def report_progress(stage: str, progress: int, pages: int = 0, chunks: int = 0, embeddings: int = 0):
+            update_data: dict[str, Any] = {
+                "current_stage": stage,
+                "progress": progress,
+            }
+            if pages > 0:
+                update_data["pages_processed"] = pages
+            if chunks > 0:
+                update_data["chunks_created"] = chunks
+            if embeddings > 0:
+                update_data["embeddings_created"] = embeddings
+            await _update_job(job_id, update_data)
 
         # ── Update status: processing ──────────────────────────────────────
         await _update_job(job_id, {
@@ -180,7 +207,7 @@ async def _process_document_background(
             {"$set": {"status": DocumentStatus.processing, "updated_at": _now()}},
         )
 
-        stored = await run_ingestion(document_id, file_path, version_id)
+        stored = await run_ingestion(document_id, file_path, version_id, on_progress=report_progress)
 
         # ── Done ───────────────────────────────────────────────────────────
         now = _now()

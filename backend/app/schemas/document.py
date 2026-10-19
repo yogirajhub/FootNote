@@ -51,6 +51,7 @@ class DocumentUpdateRequest(BaseModel):
     author: Optional[str] = None
     description: Optional[str] = None
     document_type: Optional[DocumentType] = None
+    is_favorite: Optional[bool] = None
 
 
 # ── Responses ─────────────────────────────────────────────────────────────────
@@ -64,6 +65,7 @@ class DocumentResponse(BaseModel):
     document_type: DocumentType
     file: FileInfo
     status: DocumentStatus
+    is_favorite: bool = False
     processing: Optional[ProcessingInfo] = None
     created_at: datetime
     updated_at: datetime
@@ -79,6 +81,7 @@ class DocumentResponse(BaseModel):
             document_type=doc["document_type"],
             file=FileInfo(**doc["file"]),
             status=doc["status"],
+            is_favorite=bool(doc.get("is_favorite", False)),
             processing=ProcessingInfo(**doc["processing"]) if doc.get("processing") else None,
             created_at=doc["created_at"],
             updated_at=doc["updated_at"],

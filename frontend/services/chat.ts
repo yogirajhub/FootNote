@@ -87,5 +87,11 @@ export const chatService = {
     );
     return data;
   },
+
+  async deleteConversation(id: string) {
+    const { data } = await api.delete<{ message: string }>(`/conversations/${id}`);
+    return data;
+  },
 };
+
 

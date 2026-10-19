@@ -1,4 +1,4 @@
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorGridFSBucket
 from pymongo import ASCENDING, DESCENDING
 from app.config.settings import settings
 import structlog
@@ -80,6 +80,10 @@ def notes_col():
 def document_pages_col():
     return get_collection("document_pages")
 
+def document_files_bucket() -> AsyncIOMotorGridFSBucket:
+    """Original uploaded files. Chunks live beside the parsed document data."""
+    return AsyncIOMotorGridFSBucket(get_database(), bucket_name="document_files")
+
 def feedback_col():
     return get_collection("feedback")
 
@@ -125,5 +129,12 @@ async def _create_indexes() -> None:
 
     # document_pages
     await db.document_pages.create_index([("document_id", ASCENDING), ("page_number", ASCENDING)], unique=True)
+
+    # original uploaded files (GridFS)
+    await db["document_files.files"].create_index(
+        [("metadata.document_id", ASCENDING)],
+        unique=True,
+        sparse=True,
+    )
 
     logger.info("MongoDB indexes created")

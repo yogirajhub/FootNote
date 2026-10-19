@@ -32,9 +32,9 @@ class Settings(BaseSettings):
     llm_model: str = "openai/gpt-oss-20b"
     groq_api_key: str = ""
     llm_reasoning_effort: str = "low"    # "low"|"medium"|"high" (L7)
-    llm_max_tokens_short: int = 700      # short answer cap (L7)
-    llm_max_tokens_detail: int = 1600    # "in detail" cap (L7)
-    llm_timeout_s: float = 20.0          # stream timeout seconds (L7)
+    llm_max_tokens_short: int = 420      # short answer cap for fast low latency responses
+    llm_max_tokens_detail: int = 1200    # "in detail" cap
+    llm_timeout_s: float = 15.0          # stream timeout seconds (L7)
 
     # ── File Upload ───────────────────────────────────────────────────
     max_upload_size: int = 52428800  # 50 MB

@@ -15,6 +15,7 @@ import time
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 
+from app.rag.prompts import wants_detail, is_about_footnote_build
 from app.rag.intent_classifier import classify_intent, Intent
 from app.rag.query_rewriter import query_rewriter
 from app.rag.retriever import retrieve, get_neighbor_chunks, RetrievedChunk
@@ -30,27 +31,36 @@ logger = structlog.get_logger()
 
 _SYSTEM_PROMPT = """You are FootNote, an intelligent reading companion that helps users understand documents deeply.
 
-Your role:
-- Answer questions STRICTLY based on the provided document context
-- Be clear, thoughtful, and educational
-- Use simple, accessible language in explanations
-- Always cite the source location (chapter, section, page)
-- If the context doesn't contain the answer, say: "I couldn't find enough information about this in the current document."
-- NEVER fabricate information or citations
+STRICT GROUNDING & ANTI-HALLUCINATION RULES:
+1. Answer questions STRICTLY and ONLY based on the provided document context excerpts.
+2. ABSOLUTELY NO HALLUCINATION: Never make up facts, numbers, dates, quotations, or citations. If something is not in the text, do not guess or extrapolate.
+3. OUT-OF-SCOPE / ABSENT INFORMATION RULE: If the question cannot be answered from the provided document context or is outside the document's contents, gracefully state:
+   "🙏 I couldn't find information about this in your uploaded document ('{document_title}'). Main sirf aapke uploaded document se hi answers de sakta hoon. Agar aapko iske baare mein jaanna hai, toh please usse related document upload karein!"
+4. EXACT PROOF: In the Source line and in the Proof accordion, cite the EXACT location (Page number, Chapter name/number, Section). In the Proof accordion, quote the actual verbatim words from the document text. Never fabricate a page number or quote.
+5. FOOTNOTE BUILD / INTERNAL QUESTIONS: If the user asks how FootNote was built, who built it, or queries like "tum kaise build hue ho", ALWAYS respond with:
+   "I am not able to answer thus ask anything else.\n\nMain sirf aapke uploaded document ke content se hi answers de sakta hoon. Please ask anything related to your uploaded document!"
+
+LANGUAGE RULE:
+- Match the language style of the user. If the user writes in English, respond in English.
+- If the user writes in Hinglish (Hindi + English mix), respond in Hinglish too.
+- If the user writes in Hindi, respond in Hindi.
+- Keep technical terms in English regardless of language.
 
 CRITICAL INSTRUCTION: You must format your response EXACTLY as follows, using Markdown `<details>` tags for the dropdowns. Do not add any extra text outside this structure.
 
 **Answer**
 [A short and crisp direct answer to the user's question, maximum 2-3 sentences unless the user explicitly asked for "in detail"]
 
+📖 **Source:** [ALWAYS mention the exact location: Page number, Chapter name/number, Section name — e.g. "Page 12, Chapter 3: Gravity". This proves your answer is from the document.]
+
 <details>
 <summary>Proof</summary>
-[Quote a maximum of 2 lines from the text that proves your answer, along with the source e.g. "Page 4, Chapter 1"]
+[STRICT LENGTH RULE: Maximum 1-2 concise lines, strictly under 3 lines total at all costs! Simply state: "Page X ke is part ke base par: '...brief 10-15 word exact quote...'". Never exceed 3 lines.]
 </details>
 
 <details>
 <summary>Simple Explanation</summary>
-[A plain English, easy to understand explanation of the concept]
+[A plain, easy to understand explanation of the concept — in the same language style as the user's question]
 </details>
 
 <details>
@@ -58,9 +68,46 @@ CRITICAL INSTRUCTION: You must format your response EXACTLY as follows, using Ma
 [A short story, analogy, or practical example illustrating the concept]
 </details>"""
 
-_SYSTEM_PROMPT_FOLLOWUP = """You are FootNote, continuing a conversation about a document. 
-Maintain context from the conversation history. Answer based on the provided document excerpts.
-Be concise and conversational for follow-up questions while remaining grounded in the document."""
+_DETAIL_SYSTEM_INSTRUCTION = """
+IN-DEPTH & STRUCTURED EXPLANATION INSTRUCTION (USER ASKED "IN DETAIL"):
+The user has requested an in-depth, thorough, and well-structured explanation. In your **Answer** section:
+1. Provide a comprehensive, rich, step-by-step deep dive into the subject.
+2. Include a clean, well-formatted Markdown Table (e.g. `| Concept / Key Element | Detailed Explanation from Document | Page / Reference |`) to organize and summarize the core insights clearly so the user can easily compare and read the information.
+3. Use structured subheadings or bullet points for readability.
+4. Keep the 📖 **Source:** line and the <details><summary>Proof</summary>, <details><summary>Simple Explanation</summary>, and <details><summary>Example</summary> dropdowns underneath.
+"""
+
+
+_SYSTEM_PROMPT_FOLLOWUP = """You are FootNote, continuing a conversation about a document.
+Maintain context from the conversation history. Answer based strictly on the provided document excerpts.
+
+STRICT GROUNDING & ANTI-HALLUCINATION:
+1. Answer strictly and only from the document context.
+2. If asked how FootNote was built or "tum kaise build hue ho", ALWAYS respond: "I am not able to answer thus ask anything else.\n\nMain sirf aapke uploaded document ke content se hi answers de sakta hoon."
+
+LANGUAGE RULE: Match the user's language style — English, Hinglish, or Hindi.
+
+CRITICAL INSTRUCTION: You must format your response EXACTLY as follows, using Markdown `<details>` tags:
+
+**Answer**
+[Crisp direct answer to the user's question, maximum 2-3 sentences unless "in detail" was asked]
+
+📖 **Source:** [Page number, Chapter name/number, Section]
+
+<details>
+<summary>Proof</summary>
+[STRICT LENGTH RULE: Maximum 1-2 concise lines, strictly under 3 lines total at all costs! State: "Page X ke is part ke base par: '...brief 10-15 word exact quote...'". Never exceed 3 lines.]
+</details>
+
+<details>
+<summary>Simple Explanation</summary>
+[A plain, easy to understand explanation]
+</details>
+
+<details>
+<summary>Example</summary>
+[A short story, analogy, or practical example]
+</details>"""
 
 
 @dataclass
@@ -97,14 +144,40 @@ async def _prepare_rag_pipeline(
             timings=timer.timings,
         )
 
+    # ── 1b. Check if user is asking how FootNote was built / who built FootNote ──
+    if is_about_footnote_build(query):
+        footnote_build_msg = (
+            "I am not able to answer thus ask anything else.\n\n"
+            "Main sirf aapke uploaded document ke content se hi answers de sakta hoon. "
+            "Please ask anything related to your uploaded document!"
+        )
+        return PipelineResult(
+            answer=footnote_build_msg,
+            passages=[],
+            intent=Intent.OUT_OF_SCOPE,
+            rewritten_query=query,
+            latency_ms=int(timer.total_ms),
+            timings=timer.timings,
+        )
+
     # ── 2. Intent detection ───────────────────────────────────────────────────
     with timer.stage("intent"):
-        intent = classify_intent(query, conversation_history)
+        intent = classify_intent(query, conversation_history, document_title=document_title)
     logger.info("Intent classified", intent=intent, query=query[:80])
 
+
     if intent == Intent.OUT_OF_SCOPE:
+        out_of_scope_msg = (
+            "🙏 I don't have information about this topic in your uploaded document.\n\n"
+            "Main sirf aapke uploaded document ke content se hi answers de sakta hoon. "
+            "I can only answer questions that are related to the document you've uploaded here.\n\n"
+            "**Agar aapko iske baare mein jaanna hai, toh please isse related document upload karein** "
+            "aur phir mujhse poochein — I'll be happy to help! 📄\n\n"
+            "For now, try asking something about **\"" + document_title + "\"** — "
+            "like 'What is the main idea?' ya 'Summarize the introduction.'"
+        )
         return PipelineResult(
-            answer="I'm here to help you explore the document. Please ask a question about the content!",
+            answer=out_of_scope_msg,
             passages=[],
             intent=intent,
             rewritten_query=query,
@@ -130,8 +203,17 @@ async def _prepare_rag_pipeline(
         )
 
     if not raw_chunks:
+        no_results_msg = (
+            f"Hmm, mujhe '{document_title}' mein iske baare mein kuch relevant nahi mila. 🤔\n\n"
+            f"I couldn't find relevant information about this in the document. "
+            f"This could mean:\n"
+            f"- The document doesn't cover this specific topic\n"
+            f"- Try rephrasing your question differently\n"
+            f"- Ask about a specific chapter, page, or section\n\n"
+            f"💡 **Tip:** You can select text from the reader and ask me about it directly!"
+        )
         return PipelineResult(
-            answer=f"I couldn't find relevant information about this in the document '{document_title}'. Try rephrasing your question or ask about a specific chapter or topic.",
+            answer=no_results_msg,
             passages=[],
             intent=intent,
             rewritten_query=rewritten_query,
@@ -155,6 +237,7 @@ async def _prepare_rag_pipeline(
         context = build_context(reranked, neighbor_chunks=neighbors)
 
     # ── 8. LLM generation ─────────────────────────────────────────────────────
+    is_detail = wants_detail(query)
     is_followup = intent in {Intent.FOLLOW_UP, Intent.PASSAGE_EXPLANATION}
     system_prompt = _SYSTEM_PROMPT_FOLLOWUP if is_followup else _SYSTEM_PROMPT
 
@@ -166,9 +249,10 @@ async def _prepare_rag_pipeline(
         conversation_history=conversation_history,
         document_title=document_title,
         intent=intent,
+        is_detail=is_detail,
     )
 
-    return (timer, safety_result, intent, rewritten_query, reranked, messages)
+    return (timer, safety_result, intent, rewritten_query, reranked, messages, is_detail)
 
 
 async def run_rag_pipeline(
@@ -187,11 +271,12 @@ async def run_rag_pipeline(
     if isinstance(result, PipelineResult):
         return result
         
-    timer, safety_result, intent, rewritten_query, reranked, messages = result
+    timer, safety_result, intent, rewritten_query, reranked, messages, is_detail = result
 
     with timer.stage("generation"):
         llm = get_llm()
-        answer = await llm.agenerate(messages, max_tokens=1500)
+        max_tokens = settings.llm_max_tokens_detail if is_detail else settings.llm_max_tokens_short
+        answer = await llm.agenerate(messages, max_tokens=max_tokens, detail=is_detail, temperature=0.2)
 
     # Add safety footer if document is mental-health related
     if safety_result.add_disclaimer:
@@ -232,13 +317,37 @@ async def run_rag_pipeline_stream(
         yield f"data: {json.dumps({'type': 'done', 'processing_time_ms': result.latency_ms, 'timings': result.timings})}\n\n"
         return
         
-    timer, safety_result, intent, rewritten_query, reranked, messages = result
+    timer, safety_result, intent, rewritten_query, reranked, messages, is_detail = result
     
-    yield f"data: {json.dumps({'type': 'metadata', 'intent': intent.value, 'rewritten_query': rewritten_query})}\n\n"
+    # Build sources list from reranked passages for frontend display
+    sources = []
+    for chunk in reranked:
+        meta = chunk.metadata
+        source_info = {}
+        if meta.get("page_number") or meta.get("page"):
+            source_info["page"] = meta.get("page_number", meta.get("page"))
+        if meta.get("chapter"):
+            source_info["chapter"] = meta["chapter"]
+        if meta.get("section"):
+            source_info["section"] = meta["section"]
+        if source_info:
+            sources.append(source_info)
+    
+    # Deduplicate sources by page
+    seen_pages = set()
+    unique_sources = []
+    for s in sources:
+        key = (s.get("page"), s.get("chapter", ""), s.get("section", ""))
+        if key not in seen_pages:
+            seen_pages.add(key)
+            unique_sources.append(s)
+    
+    yield f"data: {json.dumps({'type': 'metadata', 'intent': intent.value, 'rewritten_query': rewritten_query, 'sources': unique_sources})}\n\n"
     
     with timer.stage("generation"):
         llm = get_llm()
-        stream = llm.agenerate_stream(messages, max_tokens=1500)
+        max_tokens = settings.llm_max_tokens_detail if is_detail else settings.llm_max_tokens_short
+        stream = llm.agenerate_stream(messages, max_tokens=max_tokens, detail=is_detail, temperature=0.2)
         async for chunk in stream:
             yield f"data: {json.dumps({'type': 'delta', 'content': chunk})}\n\n"
 
@@ -259,8 +368,12 @@ def _build_messages(
     conversation_history: Optional[List[Dict]],
     document_title: str,
     intent: Intent,
+    is_detail: bool = False,
 ) -> List[Dict]:
-    messages = [{"role": "system", "content": system_prompt}]
+    active_prompt = system_prompt
+    if is_detail:
+        active_prompt = active_prompt + "\n\n" + _DETAIL_SYSTEM_INSTRUCTION
+    messages = [{"role": "system", "content": active_prompt}]
 
     # Add recent conversation history (last 6 turns)
     if conversation_history:
@@ -285,3 +398,4 @@ Question: {query}"""
 
     messages.append({"role": "user", "content": user_content})
     return messages
+

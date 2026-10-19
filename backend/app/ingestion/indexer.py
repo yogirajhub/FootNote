@@ -46,6 +46,7 @@ async def store_chunks_with_embeddings(
     document_id: str,
     document_version_id: str,
     progress_callback: Optional[Callable[[int, int], None]] = None,
+    batch_size: int = 150,
 ) -> int:
     """
     Store chunks + embeddings in MongoDB document_chunks collection.
@@ -55,7 +56,6 @@ async def store_chunks_with_embeddings(
         return 0
 
     col = document_chunks_col()
-    batch_size = 50
     stored = 0
 
     for i in range(0, len(chunks), batch_size):

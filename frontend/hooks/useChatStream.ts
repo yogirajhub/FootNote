@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useRef, useState } from 'react';
 import { chatService } from '../services/chat';
-import type { ChatRequest, Evidence, Panels, SSEEvent } from '../types/api';
+import type { ChatRequest, Evidence, Panels, SourceInfo, SSEEvent } from '../types/api';
 
 export type StreamStatus = 'idle' | 'streaming' | 'done' | 'error';
 
@@ -10,6 +10,7 @@ export interface StreamState {
   evidence: Evidence | null;
   panels: Panels;
   intent: string | null;
+  sources: SourceInfo[];
   status: StreamStatus;
   error: string | null;
   conversationId: string | null;
@@ -21,6 +22,7 @@ const INIT: StreamState = {
   evidence: null,
   panels: {},
   intent: null,
+  sources: [],
   status: 'idle',
   error: null,
   conversationId: null,
@@ -44,7 +46,12 @@ export function useChatStream() {
         request,
         (event: SSEEvent) => {
           if (event.type === 'metadata') {
-            setState(s => ({ ...s, intent: event.intent }));
+            setState(s => ({
+              ...s,
+              intent: event.intent,
+              sources: event.sources ?? [],
+              conversationId: event.conversation_id ?? s.conversationId,
+            }));
           } else if (event.type === 'delta') {
             setState(s => ({ ...s, answer: s.answer + event.content }));
           } else if (event.type === 'done') {

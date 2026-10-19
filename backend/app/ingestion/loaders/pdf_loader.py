@@ -32,13 +32,12 @@ class PDFLoader(DocumentLoader):
 
         for i, page in enumerate(reader.pages):
             text = page.extract_text() or ""
-            text = text.strip()
-            if text:
-                pages.append(DocumentPage(
-                    content=text,
-                    page_number=i + 1,
-                    metadata={"page": i + 1},
-                ))
+            text = text.replace("\x00", "").replace("\r\n", "\n").strip()
+            pages.append(DocumentPage(
+                content=text,
+                page_number=i + 1,
+                metadata={"page": i + 1},
+            ))
 
         logger.info("PDF loaded", pages=len(pages))
         return LoadedDocument(
