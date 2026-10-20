@@ -56,7 +56,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    fetchDocuments();
+    void fetchDocuments();
   }, [fetchDocuments]);
 
   useEffect(() => {

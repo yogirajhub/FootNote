@@ -54,7 +54,7 @@ async def send_message_stream(
 
 @router.get("/conversations", response_model=ConversationListResponse)
 async def list_conversations(
-    document_id: str = None,
+    document_id: Optional[str] = None,
     user_id: str = Depends(get_current_user),
 ):
     convs, total = await chat_service.list_conversations(user_id, document_id=document_id)

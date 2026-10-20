@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useId } from "react";
-import { useDropzone } from "react-dropzone";
+import { useDropzone, type FileRejection } from "react-dropzone";
 import {
   Upload,
   FileText,
@@ -70,7 +70,7 @@ export function UploadModal({ onClose, onSuccess, isPage = false }: UploadModalP
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
-  const [description, setDescription] = useState("");
+  const [description] = useState("");
   const [docType, setDocType] = useState("book");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{
@@ -80,7 +80,7 @@ export function UploadModal({ onClose, onSuccess, isPage = false }: UploadModalP
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const onDrop = useCallback((acceptedFiles: File[], fileRejections: any[]) => {
+  const onDrop = useCallback((acceptedFiles: File[], fileRejections: FileRejection[]) => {
     if (fileRejections.length > 0) {
       setError("Please select a supported document file (PDF, EPUB, DOCX, TXT, MD) under 50 MB.");
       return;
@@ -135,8 +135,9 @@ export function UploadModal({ onClose, onSuccess, isPage = false }: UploadModalP
 
       if (onSuccess) onSuccess();
       router.push(`/documents/${doc.id}/processing`);
-    } catch (err: any) {
-      const msg = err.response?.data?.detail || err.message || "Upload failed. Please try again.";
+    } catch (err: unknown) {
+      const errObj = err as { response?: { data?: { detail?: string } }; message?: string };
+      const msg = errObj.response?.data?.detail || errObj.message || "Upload failed. Please try again.";
       setError(msg);
       setIsUploading(false);
       setUploadProgress(null);

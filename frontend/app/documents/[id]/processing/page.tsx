@@ -90,9 +90,9 @@ export default function ProcessingPage() {
             }, 600);
           }
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (initial && isMounted) {
-          setError(err.message || "Failed to load processing status");
+          setError(err instanceof Error ? err.message : "Failed to load processing status");
         }
       }
     };
@@ -114,7 +114,7 @@ export default function ProcessingPage() {
       try {
         await documentsService.delete(documentId);
         router.push("/");
-      } catch (err: any) {
+      } catch {
         setError("Failed to delete document");
       }
     }

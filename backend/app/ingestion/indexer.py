@@ -2,6 +2,7 @@
 Indexer — stores processed chunks and their embeddings into MongoDB.
 Also creates the vector search index when needed.
 """
+import asyncio
 from datetime import datetime, timezone
 from typing import List, Optional, Callable
 from app.ingestion.chunker import Chunk
@@ -40,6 +41,40 @@ async def store_sections(
     return [str(i) for i in result.inserted_ids]
 
 
+async def store_chunk_batch(
+    batch_chunks: List[Chunk],
+    batch_embeddings: List[List[float]],
+    document_id: str,
+    document_version_id: str,
+) -> int:
+    """Store a single batch of chunks + embeddings directly into MongoDB."""
+    if not batch_chunks:
+        return 0
+
+    col = document_chunks_col()
+    docs = []
+    now = datetime.now(timezone.utc)
+    for chunk, embedding in zip(batch_chunks, batch_embeddings):
+        docs.append({
+            "_id": chunk.chunk_id,
+            "document_id": document_id,
+            "document_version_id": document_version_id,
+            "content": chunk.content,
+            "metadata": chunk.metadata,
+            "token_count": chunk.token_count,
+            "embedding": embedding,
+            "previous_chunk_id": chunk.previous_chunk_id,
+            "next_chunk_id": chunk.next_chunk_id,
+            "parent_chunk_id": chunk.parent_chunk_id,
+            "created_at": now,
+        })
+
+    result = await col.insert_many(docs, ordered=False)
+    inserted = len(result.inserted_ids)
+    logger.debug("Chunk batch stored", inserted=inserted, document_id=document_id)
+    return inserted
+
+
 async def store_chunks_with_embeddings(
     chunks: List[Chunk],
     embeddings: List[List[float]],
@@ -49,44 +84,30 @@ async def store_chunks_with_embeddings(
     batch_size: int = 150,
 ) -> int:
     """
-    Store chunks + embeddings in MongoDB document_chunks collection.
+    Store chunks + embeddings in MongoDB document_chunks collection concurrently in batches.
     Returns number of chunks stored.
     """
     if not chunks:
         return 0
 
-    col = document_chunks_col()
-    stored = 0
-
+    batches = []
     for i in range(0, len(chunks), batch_size):
-        batch_chunks = chunks[i: i + batch_size]
-        batch_embeddings = embeddings[i: i + batch_size]
+        b_chunks = chunks[i : i + batch_size]
+        b_embs = embeddings[i : i + batch_size]
+        batches.append((b_chunks, b_embs))
 
-        docs = []
-        for chunk, embedding in zip(batch_chunks, batch_embeddings):
-            docs.append({
-                "_id": chunk.chunk_id,
-                "document_id": document_id,
-                "document_version_id": document_version_id,
-                "content": chunk.content,
-                "metadata": chunk.metadata,
-                "token_count": chunk.token_count,
-                "embedding": embedding,
-                "previous_chunk_id": chunk.previous_chunk_id,
-                "next_chunk_id": chunk.next_chunk_id,
-                "parent_chunk_id": chunk.parent_chunk_id,
-                "created_at": datetime.now(timezone.utc),
-            })
+    # Execute batch inserts concurrently across network
+    tasks = [
+        store_chunk_batch(b_chunks, b_embs, document_id, document_version_id)
+        for b_chunks, b_embs in batches
+    ]
+    results = await asyncio.gather(*tasks)
+    stored = sum(results)
 
-        await col.insert_many(docs, ordered=False)
-        stored += len(docs)
+    if progress_callback:
+        progress_callback(stored, len(chunks))
 
-        if progress_callback:
-            progress_callback(stored, len(chunks))
-
-        logger.debug("Batch stored", batch=i // batch_size + 1, stored=stored)
-
-    logger.info("All chunks stored", total=stored, document_id=document_id)
+    logger.info("All chunks stored concurrently", total=stored, document_id=document_id)
     return stored
 
 

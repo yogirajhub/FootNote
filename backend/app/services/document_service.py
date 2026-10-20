@@ -172,17 +172,29 @@ async def _process_document_background(
     version_id = f"v_{uuid.uuid4().hex[:8]}"
 
     try:
-        # Asynchronously ensure original file is stored in GridFS in the background
+        # Launch GridFS original file persistence in the background concurrently
+        # This prevents large file network upload to Atlas from blocking ingestion
         from app.services.original_file_service import ensure_original_file
-        try:
-            doc = await documents_col().find_one({"_id": document_id})
-            if doc and not (doc.get("file") or {}).get("storage_id"):
-                await ensure_original_file(doc)
-        except Exception as file_err:
-            logger.warning("Could not persist original file into GridFS during background task", error=str(file_err), document_id=document_id)
 
-        # ── Real-time progress reporter ─────────────────────────────────────
+        async def _persist_gridfs_copy():
+            try:
+                doc = await documents_col().find_one({"_id": document_id})
+                if doc and not (doc.get("file") or {}).get("storage_id"):
+                    await ensure_original_file(doc)
+            except Exception as file_err:
+                logger.warning(
+                    "Could not persist original file into GridFS during background task",
+                    error=str(file_err),
+                    document_id=document_id,
+                )
+
+        gridfs_task = asyncio.create_task(_persist_gridfs_copy())
+
+        # ── Real-time non-blocking progress reporter ────────────────────────
+        _last_update_task: Optional[asyncio.Task] = None
+
         async def report_progress(stage: str, progress: int, pages: int = 0, chunks: int = 0, embeddings: int = 0):
+            nonlocal _last_update_task
             update_data: dict[str, Any] = {
                 "current_stage": stage,
                 "progress": progress,
@@ -193,7 +205,7 @@ async def _process_document_background(
                 update_data["chunks_created"] = chunks
             if embeddings > 0:
                 update_data["embeddings_created"] = embeddings
-            await _update_job(job_id, update_data)
+            _last_update_task = asyncio.create_task(_update_job(job_id, update_data))
 
         # ── Update status: processing ──────────────────────────────────────
         await _update_job(job_id, {
@@ -208,6 +220,12 @@ async def _process_document_background(
         )
 
         stored = await run_ingestion(document_id, file_path, version_id, on_progress=report_progress)
+
+        if _last_update_task:
+            try:
+                await _last_update_task
+            except Exception:
+                pass
 
         # ── Done ───────────────────────────────────────────────────────────
         now = _now()

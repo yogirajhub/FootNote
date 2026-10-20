@@ -63,6 +63,48 @@ class _VectorCache:
             self.access_order.append(document_id)
             return matrix, chunks
             
+    def set_document_data(
+        self,
+        document_id: str,
+        chunks: List[Any],
+        embeddings: List[List[float]],
+    ) -> None:
+        """Pre-warm cache directly from in-memory ingestion to eliminate WAN latency on first query."""
+        if not chunks or not embeddings:
+            return
+        try:
+            matrix = np.array(embeddings, dtype=np.float32)
+            norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+            matrix = np.divide(matrix, norms, out=np.zeros_like(matrix), where=norms != 0)
+
+            retrieved_chunks = []
+            for c in chunks:
+                if isinstance(c, RetrievedChunk):
+                    retrieved_chunks.append(c)
+                elif hasattr(c, "chunk_id"):
+                    retrieved_chunks.append(RetrievedChunk({
+                        "_id": c.chunk_id,
+                        "document_id": document_id,
+                        "content": c.content,
+                        "metadata": c.metadata,
+                        "previous_chunk_id": c.previous_chunk_id,
+                        "next_chunk_id": c.next_chunk_id,
+                    }))
+                elif isinstance(c, dict):
+                    retrieved_chunks.append(RetrievedChunk(c))
+
+            if document_id in self.cache:
+                self.access_order.remove(document_id)
+            elif len(self.cache) >= self.max_docs:
+                lru_doc = self.access_order.pop(0)
+                self.cache.pop(lru_doc, None)
+
+            self.cache[document_id] = (matrix, retrieved_chunks)
+            self.access_order.append(document_id)
+            logger.info("Pre-warmed in-memory vector cache", document_id=document_id, count=len(retrieved_chunks))
+        except Exception as e:
+            logger.warning("Failed to pre-warm vector cache", error=str(e), document_id=document_id)
+
     def invalidate(self, document_id: str):
         if document_id in self.cache:
             del self.cache[document_id]
@@ -72,6 +114,9 @@ _vector_cache = _VectorCache()
 
 def invalidate_document_cache(document_id: str):
     _vector_cache.invalidate(document_id)
+
+def prewarm_document_cache(document_id: str, chunks: List[Any], embeddings: List[List[float]]):
+    _vector_cache.set_document_data(document_id, chunks, embeddings)
 
 
 class RetrievedChunk:

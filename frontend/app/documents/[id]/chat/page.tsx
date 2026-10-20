@@ -34,7 +34,7 @@ type Panel = "toc" | "notes";
 function QuoteChip({ text, page, onRemove }: { text: string; page?: number | null; onRemove: () => void }) {
   return (
     <div className="flex items-start gap-2 bg-primary/10 border border-primary/25 rounded-lg px-3 py-2 text-sm mb-2">
-      <span className="text-primary font-semibold shrink-0">"</span>
+      <span className="text-primary font-semibold shrink-0">&ldquo;</span>
       <span className="text-foreground/80 line-clamp-2 flex-1">{text.slice(0, 120)}{text.length > 120 ? '…' : ''}</span>
       {page && <span className="text-xs text-muted-foreground shrink-0 self-end">p.{page}</span>}
       <button onClick={onRemove} className="text-muted-foreground hover:text-destructive shrink-0 mt-0.5 transition-colors">
@@ -243,7 +243,7 @@ function AnswerCard({
 
               <div className="border-l-2 border-primary/40 pl-3 py-0.5">
                 <p className="proof-quote not-italic font-normal text-[13.5px] leading-relaxed text-foreground/90 select-text line-clamp-3">
-                  "{cleanProofText}"
+                  &ldquo;{cleanProofText}&rdquo;
                 </p>
               </div>
 
@@ -438,9 +438,12 @@ function BookReader({
   readerRootRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const activePageRef = useRef(activePage);
-  activePageRef.current = activePage;
   const onVisiblePageRef = useRef(onVisiblePage);
-  onVisiblePageRef.current = onVisiblePage;
+
+  useEffect(() => {
+    activePageRef.current = activePage;
+    onVisiblePageRef.current = onVisiblePage;
+  }, [activePage, onVisiblePage]);
 
   useEffect(() => {
     if (!jumpToken) return;
@@ -1634,7 +1637,7 @@ export default function ChatPage() {
                   <div>
                     <p className="text-sm font-semibold">No chat history yet</p>
                     <p className="text-xs text-muted-foreground mt-1 max-w-[210px]">
-                      Your conversations about "{doc.title}" will appear here so you can revisit them anytime.
+                      Your conversations about &ldquo;{doc.title}&rdquo; will appear here so you can revisit them anytime.
                     </p>
                   </div>
                   <button
@@ -1720,7 +1723,7 @@ export default function ChatPage() {
                       <MessageSquare size={20} className="text-primary" />
                     </div>
                     <div>
-                      <p className="font-semibold text-sm">Ask about "{doc.title}"</p>
+                      <p className="font-semibold text-sm">Ask about &ldquo;{doc.title}&rdquo;</p>
                       <p className="text-xs text-muted-foreground mt-1">Select text in the reader to ask about it, or type a question below.</p>
                     </div>
                     <div className="grid grid-cols-1 gap-2 text-left mt-2">

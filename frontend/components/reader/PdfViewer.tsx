@@ -33,24 +33,21 @@ function PdfPage({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [near, setNear] = useState(forced);
-
-  useEffect(() => {
-    if (forced) setNear(true);
-  }, [forced]);
+  const [near, setNear] = useState(false);
+  const isNear = forced || near;
 
   useEffect(() => {
     const node = wrapRef.current;
-    if (!node) return;
+    if (!node || isNear) return;
     const observer = new IntersectionObserver(([entry]) => {
       if (entry?.isIntersecting) setNear(true);
     }, { rootMargin: "800px 0px" });
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
+  }, [isNear]);
 
   useEffect(() => {
-    if (!near) return;
+    if (!isNear) return;
     let cancelled = false;
     let renderTask: { promise: Promise<void>; cancel: () => void } | null = null;
     let textTask: { cancel: () => void } | null = null;
@@ -110,7 +107,7 @@ function PdfPage({
         // The page finished rendering before cancel.
       }
     };
-  }, [near, pdf, pageNumber, width]);
+  }, [isNear, pdf, pageNumber, width]);
 
   return (
     <div
@@ -155,9 +152,12 @@ export function PdfViewer({
   const activePageRef = useRef(activePage);
   const onVisiblePageRef = useRef(onVisiblePage);
   const onPageCountRef = useRef(onPageCount);
-  activePageRef.current = activePage;
-  onVisiblePageRef.current = onVisiblePage;
-  onPageCountRef.current = onPageCount;
+
+  useEffect(() => {
+    activePageRef.current = activePage;
+    onVisiblePageRef.current = onVisiblePage;
+    onPageCountRef.current = onPageCount;
+  }, [activePage, onVisiblePage, onPageCount]);
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -173,14 +173,9 @@ export function PdfViewer({
   }, [pdf, loading]);
 
   useEffect(() => {
-    if (!data) {
-      setPdf(null);
-      return;
-    }
+    if (!data) return;
     let cancelled = false;
     let loadingTask: { destroy: () => Promise<void> } | null = null;
-    setPdf(null);
-    setParseError(null);
 
     const open = async () => {
       try {
