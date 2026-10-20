@@ -1,6 +1,8 @@
 """
 Chat API — send messages, list/get conversations.
 """
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Depends
 from app.schemas.chat import (
     ChatRequest, ChatResponse, ConversationListResponse,
@@ -87,4 +89,3 @@ async def delete_conversation(
     if not success:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return {"message": "Conversation deleted successfully"}
-
