@@ -7,6 +7,7 @@ Cross-document mode can be enabled by passing multiple document_ids.
 from __future__ import annotations
 from typing import List, Optional, Dict, Any, Tuple
 import asyncio
+import re
 import numpy as np
 from app.db.mongodb import document_chunks_col
 from app.rag.embeddings import embedding_service
@@ -35,9 +36,20 @@ class _VectorCache:
                 self.access_order.append(document_id)
                 return self.cache[document_id]
                 
-            # Need to load
+            # Need to load - use projection to only fetch fields needed for search and context
             col = document_chunks_col()
-            cursor = col.find({"document_id": document_id})
+            cursor = col.find(
+                {"document_id": document_id},
+                {
+                    "_id": 1,
+                    "document_id": 1,
+                    "content": 1,
+                    "metadata": 1,
+                    "previous_chunk_id": 1,
+                    "next_chunk_id": 1,
+                    "embedding": 1,
+                },
+            )
             chunks = []
             embeddings = []
             
@@ -146,8 +158,10 @@ async def _numpy_search(query_vec: np.ndarray, document_id: str, top_k: int) -> 
     results = []
     for idx in top_indices:
         chunk = chunks[idx]
-        # Store score directly, conversion to Atlas format ((x+1)/2) happens later if needed
-        chunk.score = float(scores[idx])
+        raw_cos = float(scores[idx])
+        # Normalize raw cosine (-1.0 to 1.0) to Atlas $vectorSearch score scale (0.0 to 1.0): (cos + 1.0) / 2.0
+        normalized_score = max(0.0, min(1.0, (raw_cos + 1.0) / 2.0))
+        chunk.score = normalized_score
         results.append(chunk)
         
     return results
@@ -217,28 +231,46 @@ async def retrieve(
                 if score >= settings.min_relevance:
                     results.append(RetrievedChunk(doc, score=score))
 
-            logger.info(
-                "Vector retrieval complete",
-                query_len=len(query),
-                results=len(results),
-                document_id=document_id,
-            )
-            return results
+            if results:
+                logger.info(
+                    "Vector retrieval complete via Atlas $vectorSearch",
+                    query_len=len(query),
+                    results=len(results),
+                    document_id=document_id,
+                )
+                return results
+            else:
+                logger.warning(
+                    "Atlas $vectorSearch returned 0 results (possibly index updating or below threshold), falling back to in-memory/numpy search",
+                    document_id=document_id,
+                )
 
         except Exception as e:
             # Fallback: if vector index doesn't exist yet, try numpy search
             logger.warning("Vector search failed, falling back to numpy search", error=str(e))
     
-    # Numpy fallback (works best for single doc)
+    # Numpy fallback (works for single doc)
     if not document_ids or len(document_ids) == 1:
         target_doc = document_ids[0] if document_ids else document_id
         results = await _numpy_search(query_embedding, target_doc, k)
-        # Apply min_relevance threshold (assuming numpy scores are cosine sim 0-1)
-        results = [r for r in results if r.score >= settings.min_relevance]
-        if results:
-            return results
+        filtered_results = [r for r in results if r.score >= settings.min_relevance]
+        if filtered_results:
+            logger.info(
+                "Retrieval complete via numpy search",
+                document_id=target_doc,
+                results=len(filtered_results),
+            )
+            return filtered_results
+        elif results:
+            logger.warning(
+                "Numpy results were below min_relevance, returning top candidate to avoid total dropout",
+                top_score=results[0].score,
+                min_relevance=settings.min_relevance,
+                document_id=target_doc,
+            )
+            return results[:max(1, min(2, len(results)))]
             
-    # Final fallback
+    # Final fallback: keyword search
     return await _keyword_fallback(query, match_filter, k)
 
 
@@ -249,8 +281,10 @@ async def _keyword_fallback(
 ) -> List[RetrievedChunk]:
     """Simple keyword search fallback when vector index is unavailable."""
     col = document_chunks_col()
-    words = query.split()[:5]  # use first 5 words
-    regex = "|".join(words)
+    words = [re.escape(w) for w in query.split() if len(w) > 2][:5]
+    if not words:
+        words = [re.escape(w) for w in query.split()[:5]]
+    regex = "|".join(words) if words else ".*"
 
     pipeline = [
         {"$match": {**match_filter, "content": {"$regex": regex, "$options": "i"}}},

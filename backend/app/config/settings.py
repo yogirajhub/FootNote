@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     chunk_size: int = 512
     chunk_overlap: int = 64
     context_max_tokens: int = 2200  # LLM context budget (L8)
-    min_relevance: float = 0.25     # relevance gate threshold (A4)
+    min_relevance: float = 0.15     # relevance gate threshold (Atlas & normalized cosine scale 0.0-1.0)
 
     # ── Query rewriter ────────────────────────────────────────────────
     enable_llm_rewrite: bool = False  # LLM rewrite only when True (L4)

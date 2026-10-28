@@ -58,14 +58,19 @@ class EmbeddingService:
         import torch
         model = _get_model()
         with torch.inference_mode():
-            vector = model.encode(text, convert_to_numpy=True, show_progress_bar=False)
+            vector = model.encode(
+                text,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+                normalize_embeddings=True,
+            )
         return vector.tolist()
 
     async def aembed_text(self, text: str) -> List[float]:
         """Async wrapper for single string embedding."""
         return await asyncio.to_thread(self.embed_text, text)
 
-    def embed_texts(self, texts: List[str], batch_size: int = 128) -> List[List[float]]:
+    def embed_texts(self, texts: List[str], batch_size: int = 64) -> List[List[float]]:
         """Embed a list of strings in batches using inference_mode and C-level list conversion."""
         if not texts:
             return []
@@ -77,14 +82,15 @@ class EmbeddingService:
                 batch_size=batch_size,
                 convert_to_numpy=True,
                 show_progress_bar=False,
+                normalize_embeddings=True,
             )
         return vectors.tolist()
         
-    async def aembed_texts(self, texts: List[str], batch_size: int = 128) -> List[List[float]]:
+    async def aembed_texts(self, texts: List[str], batch_size: int = 64) -> List[List[float]]:
         """Async wrapper for batch string embedding."""
         return await asyncio.to_thread(self.embed_texts, texts, batch_size)
 
-    def embed_texts_parallel(self, texts: List[str], batch_size: int = 128, max_workers: int = 2) -> List[List[float]]:
+    def embed_texts_parallel(self, texts: List[str], batch_size: int = 64, max_workers: int = 2) -> List[List[float]]:
         """
         Embed texts across parallel worker threads.
         Splits batches across workers to maximize multi-core CPU throughput.
@@ -109,7 +115,7 @@ class EmbeddingService:
     async def aembed_texts_parallel(
         self,
         texts: List[str],
-        batch_size: int = 128,
+        batch_size: int = 64,
         max_workers: int = 2,
     ) -> List[List[float]]:
         """Async wrapper for parallel worker embedding."""

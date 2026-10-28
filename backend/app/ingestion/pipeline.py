@@ -71,7 +71,7 @@ async def run_ingestion(
     logger.info("Stage: embedding", document_id=document_id, chunks=chunks_count)
     await _notify("embedding", 65, pages=pages_count, chunks=chunks_count)
 
-    batch_size = 128
+    batch_size = 64
     chunk_batches = [chunks[i : i + batch_size] for i in range(0, chunks_count, batch_size)]
     
     all_embeddings: List[List[float]] = []
