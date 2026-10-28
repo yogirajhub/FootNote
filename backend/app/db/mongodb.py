@@ -3,6 +3,14 @@ from pymongo import ASCENDING, DESCENDING
 from app.config.settings import settings
 import structlog
 
+# Ensure DNS resolution for MongoDB Atlas SRV records does not time out on local DNS forwarders
+try:
+    import dns.resolver
+    dns.resolver.default_resolver = dns.resolver.Resolver(configure=False)
+    dns.resolver.default_resolver.nameservers = ['8.8.8.8', '1.1.1.1', '8.8.4.4']
+except Exception:
+    pass
+
 logger = structlog.get_logger()
 
 _client: AsyncIOMotorClient | None = None

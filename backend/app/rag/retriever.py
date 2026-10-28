@@ -35,8 +35,7 @@ class _VectorCache:
                 self.access_order.remove(document_id)
                 self.access_order.append(document_id)
                 return self.cache[document_id]
-                
-            # Need to load - use projection to only fetch fields needed for search and context
+            # Need to load - use projection and bulk batch size to minimize WAN round trips
             col = document_chunks_col()
             cursor = col.find(
                 {"document_id": document_id},
@@ -49,11 +48,13 @@ class _VectorCache:
                     "next_chunk_id": 1,
                     "embedding": 1,
                 },
+                batch_size=500,
             )
+            raw_docs = await cursor.to_list(length=3000)
             chunks = []
             embeddings = []
             
-            async for doc in cursor:
+            for doc in raw_docs:
                 emb = doc.pop("embedding", None)
                 if emb:
                     embeddings.append(emb)
@@ -116,6 +117,14 @@ class _VectorCache:
             logger.info("Pre-warmed in-memory vector cache", document_id=document_id, count=len(retrieved_chunks))
         except Exception as e:
             logger.warning("Failed to pre-warm vector cache", error=str(e), document_id=document_id)
+
+    def get_cached_chunks_by_ids(self, document_id: str, chunk_ids: List[str]) -> List[RetrievedChunk]:
+        """Look up chunks in memory instantly without network round-trips."""
+        if document_id not in self.cache:
+            return []
+        _, chunks = self.cache[document_id]
+        id_set = set(chunk_ids)
+        return [c for c in chunks if c.chunk_id in id_set]
 
     def invalidate(self, document_id: str):
         if document_id in self.cache:
@@ -324,12 +333,18 @@ async def get_neighbor_chunks(
     if not neighbor_ids:
         return []
         
-    col = document_chunks_col()
-    cursor = col.find({"_id": {"$in": neighbor_ids}})
-    
+    # Check in-memory cache first to eliminate WAN latency
     results = []
-    async for doc in cursor:
-        results.append(RetrievedChunk(doc))
+    if chunk.document_id:
+        cached = _vector_cache.get_cached_chunks_by_ids(chunk.document_id, neighbor_ids)
+        if len(cached) == len(neighbor_ids):
+            results = cached
+
+    if not results:
+        col = document_chunks_col()
+        cursor = col.find({"_id": {"$in": neighbor_ids}})
+        async for doc in cursor:
+            results.append(RetrievedChunk(doc))
         
     # Sort correctly so prev is before next
     neighbors = []
