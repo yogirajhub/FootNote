@@ -90,9 +90,9 @@ export default function ProcessingPage() {
             }, 600);
           }
         }
-      } catch (err: unknown) {
+      } catch (err: any) {
         if (initial && isMounted) {
-          setError(err instanceof Error ? err.message : "Failed to load processing status");
+          setError(err.message || "Failed to load processing status");
         }
       }
     };
@@ -114,7 +114,7 @@ export default function ProcessingPage() {
       try {
         await documentsService.delete(documentId);
         router.push("/");
-      } catch {
+      } catch (err: any) {
         setError("Failed to delete document");
       }
     }
@@ -258,11 +258,10 @@ export default function ProcessingPage() {
               return (
                 <div
                   key={stage.id}
-                  className={`flex items-start gap-3.5 p-3 rounded-xl transition-colors ${
-                    status === "processing"
+                  className={`flex items-start gap-3.5 p-3 rounded-xl transition-colors ${status === "processing"
                       ? "bg-primary/5 border border-primary/20 shadow-2xs"
                       : "bg-transparent"
-                  }`}
+                    }`}
                 >
                   <div className="shrink-0 mt-0.5">
                     {status === "completed" ? (
@@ -276,13 +275,12 @@ export default function ProcessingPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span
-                        className={`text-xs font-semibold ${
-                          status === "completed"
+                        className={`text-xs font-semibold ${status === "completed"
                             ? "text-foreground"
                             : status === "processing"
-                            ? "text-primary font-bold"
-                            : "text-muted-foreground"
-                        }`}
+                              ? "text-primary font-bold"
+                              : "text-muted-foreground"
+                          }`}
                       >
                         {stage.label}
                       </span>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useId } from "react";
-import { useDropzone, type FileRejection } from "react-dropzone";
+import { useDropzone } from "react-dropzone";
 import {
   Upload,
   FileText,
@@ -70,7 +70,7 @@ export function UploadModal({ onClose, onSuccess, isPage = false }: UploadModalP
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
-  const [description] = useState("");
+  const [description, setDescription] = useState("");
   const [docType, setDocType] = useState("book");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{
@@ -80,7 +80,7 @@ export function UploadModal({ onClose, onSuccess, isPage = false }: UploadModalP
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const onDrop = useCallback((acceptedFiles: File[], fileRejections: FileRejection[]) => {
+  const onDrop = useCallback((acceptedFiles: File[], fileRejections: any[]) => {
     if (fileRejections.length > 0) {
       setError("Please select a supported document file (PDF, EPUB, DOCX, TXT, MD) under 50 MB.");
       return;
@@ -135,9 +135,8 @@ export function UploadModal({ onClose, onSuccess, isPage = false }: UploadModalP
 
       if (onSuccess) onSuccess();
       router.push(`/documents/${doc.id}/processing`);
-    } catch (err: unknown) {
-      const errObj = err as { response?: { data?: { detail?: string } }; message?: string };
-      const msg = errObj.response?.data?.detail || errObj.message || "Upload failed. Please try again.";
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || err.message || "Upload failed. Please try again.";
       setError(msg);
       setIsUploading(false);
       setUploadProgress(null);
@@ -151,9 +150,8 @@ export function UploadModal({ onClose, onSuccess, isPage = false }: UploadModalP
 
   const content = (
     <div
-      className={`bg-card border border-border/80 shadow-2xl rounded-2xl overflow-hidden transition-all duration-200 ${
-        isPage ? "max-w-2xl w-full" : "w-full max-w-xl max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-200"
-      }`}
+      className={`bg-card border border-border/80 shadow-2xl rounded-2xl overflow-hidden transition-all duration-200 ${isPage ? "max-w-2xl w-full" : "w-full max-w-xl max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-200"
+        }`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="upload-modal-title"
@@ -190,11 +188,10 @@ export function UploadModal({ onClose, onSuccess, isPage = false }: UploadModalP
         {!file ? (
           <div
             {...getRootProps()}
-            className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200 group ${
-              isDragActive
+            className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200 group ${isDragActive
                 ? "border-primary bg-primary/10 scale-[1.01]"
                 : "border-border/80 hover:border-primary/50 hover:bg-muted/30"
-            }`}
+              }`}
           >
             <input {...getInputProps()} id={fileInputId} />
             <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-secondary/80 flex items-center justify-center text-primary group-hover:scale-105 transition-transform duration-200 shadow-xs">
@@ -326,11 +323,10 @@ export function UploadModal({ onClose, onSuccess, isPage = false }: UploadModalP
                     type="button"
                     onClick={() => setDocType(t.id)}
                     disabled={isUploading}
-                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                      isSelected
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${isSelected
                         ? "bg-primary/10 border-primary text-primary font-semibold shadow-2xs ring-1 ring-primary/40"
                         : "bg-background border-border/80 text-muted-foreground hover:text-foreground hover:bg-muted/40"
-                    }`}
+                      }`}
                   >
                     <Icon size={16} className={isSelected ? "text-primary" : "text-muted-foreground"} />
                     <span className="text-xs truncate">{t.label}</span>

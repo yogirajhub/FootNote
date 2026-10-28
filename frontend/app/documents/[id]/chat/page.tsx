@@ -34,7 +34,7 @@ type Panel = "toc" | "notes";
 function QuoteChip({ text, page, onRemove }: { text: string; page?: number | null; onRemove: () => void }) {
   return (
     <div className="flex items-start gap-2 bg-primary/10 border border-primary/25 rounded-lg px-3 py-2 text-sm mb-2">
-      <span className="text-primary font-semibold shrink-0">&ldquo;</span>
+      <span className="text-primary font-semibold shrink-0">"</span>
       <span className="text-foreground/80 line-clamp-2 flex-1">{text.slice(0, 120)}{text.length > 120 ? '…' : ''}</span>
       {page && <span className="text-xs text-muted-foreground shrink-0 self-end">p.{page}</span>}
       <button onClick={onRemove} className="text-muted-foreground hover:text-destructive shrink-0 mt-0.5 transition-colors">
@@ -243,7 +243,7 @@ function AnswerCard({
 
               <div className="border-l-2 border-primary/40 pl-3 py-0.5">
                 <p className="proof-quote not-italic font-normal text-[13.5px] leading-relaxed text-foreground/90 select-text line-clamp-3">
-                  &ldquo;{cleanProofText}&rdquo;
+                  "{cleanProofText}"
                 </p>
               </div>
 
@@ -283,11 +283,10 @@ function AnswerCard({
         <div className="flex items-center gap-3 pt-2 border-t border-border/50 flex-wrap">
           <button
             onClick={handleSave}
-            className={`flex items-center gap-1.5 text-xs transition-all cursor-pointer ${
-              isSaved
+            className={`flex items-center gap-1.5 text-xs transition-all cursor-pointer ${isSaved
                 ? "text-emerald-600 dark:text-emerald-400 font-semibold"
                 : "text-muted-foreground hover:text-primary"
-            }`}
+              }`}
             title="Save this answer to your document notes"
           >
             {isSaved ? <Check size={13} className="text-emerald-500 animate-in zoom-in-50 duration-200" /> : <NotebookPen size={13} />}
@@ -383,11 +382,10 @@ function PageGrid({
                   }
                 }}
                 onMouseLeave={() => setHover(null)}
-                className={`flex h-9 sm:h-7 items-center justify-center rounded-lg sm:rounded-md border text-xs font-medium tabular-nums leading-none transition-colors active:scale-95 ${
-                  active
+                className={`flex h-9 sm:h-7 items-center justify-center rounded-lg sm:rounded-md border text-xs font-medium tabular-nums leading-none transition-colors active:scale-95 ${active
                     ? "bg-primary/10 border-primary text-primary font-bold"
                     : "bg-background border-border text-foreground/80 hover:border-primary/40 hover:bg-primary/5"
-                }`}
+                  }`}
                 aria-label={`Open page ${page.page}`}
                 aria-current={active ? "page" : undefined}
               >
@@ -438,12 +436,9 @@ function BookReader({
   readerRootRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const activePageRef = useRef(activePage);
+  activePageRef.current = activePage;
   const onVisiblePageRef = useRef(onVisiblePage);
-
-  useEffect(() => {
-    activePageRef.current = activePage;
-    onVisiblePageRef.current = onVisiblePage;
-  }, [activePage, onVisiblePage]);
+  onVisiblePageRef.current = onVisiblePage;
 
   useEffect(() => {
     if (!jumpToken) return;
@@ -528,9 +523,8 @@ function BookReader({
                 <article
                   key={page.page}
                   data-page={page.page}
-                  className={`bg-card border rounded-xl shadow-sm px-4 py-6 sm:px-6 sm:py-8 md:px-10 ${
-                    active ? "border-primary/50 ring-2 ring-primary/15" : "border-border"
-                  }`}
+                  className={`bg-card border rounded-xl shadow-sm px-4 py-6 sm:px-6 sm:py-8 md:px-10 ${active ? "border-primary/50 ring-2 ring-primary/15" : "border-border"
+                    }`}
                 >
                   <header className="flex items-start justify-between gap-4 mb-4 sm:mb-6 pb-3 border-b border-border">
                     <p className="text-sm font-medium text-primary line-clamp-2">
@@ -809,11 +803,10 @@ function MovableChatButton({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        className={`relative group flex items-center justify-center w-13 h-13 rounded-full bg-primary text-primary-foreground shadow-lg select-none transition-shadow ${
-          isDragging
+        className={`relative group flex items-center justify-center w-13 h-13 rounded-full bg-primary text-primary-foreground shadow-lg select-none transition-shadow ${isDragging
             ? "cursor-grabbing scale-105 shadow-2xl ring-4 ring-primary/30"
             : "cursor-grab hover:scale-105 hover:shadow-xl active:scale-95"
-        }`}
+          }`}
         title="Ask FootNote (Drag anywhere • Tap to open)"
         aria-label="Open chat"
       >
@@ -1063,7 +1056,7 @@ export default function ChatPage() {
       // Refresh conversation list in background to include this new chat
       chatService.listConversations(documentId)
         .then(res => setConversations(res.conversations))
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [stream.status, stream.answer, stream.intent, stream.sources, stream.conversationId, conversationId, documentId, doc?.title]);
 
@@ -1219,9 +1212,9 @@ export default function ChatPage() {
   const previewByPage = new Map(bookPages.map((page) => [page.page, page]));
   const sidebarPages: DocumentPageContent[] = isPdf && pdfPageCount > 0
     ? Array.from({ length: pdfPageCount }, (_, index) => {
-        const page = index + 1;
-        return previewByPage.get(page) ?? { page, content: "", heading: "", preview: "" };
-      })
+      const page = index + 1;
+      return previewByPage.get(page) ?? { page, content: "", heading: "", preview: "" };
+    })
     : bookPages;
   const isStreaming = stream.status === "streaming";
 
@@ -1260,21 +1253,19 @@ export default function ChatPage() {
             <div className="flex border-b border-border bg-secondary/30 p-1.5 gap-1 shrink-0">
               <button
                 onClick={() => setMobileDrawer("toc")}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
-                  mobileDrawer === "toc"
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${mobileDrawer === "toc"
                     ? "bg-card text-foreground shadow-xs font-semibold"
                     : "text-muted-foreground hover:text-foreground"
-                }`}
+                  }`}
               >
                 <BookOpen size={13} /> Contents
               </button>
               <button
                 onClick={() => setMobileDrawer("notes")}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
-                  mobileDrawer === "notes"
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${mobileDrawer === "notes"
                     ? "bg-card text-foreground shadow-xs font-semibold"
                     : "text-muted-foreground hover:text-foreground"
-                }`}
+                  }`}
               >
                 <NotebookPen size={13} /> Notes ({notes.length})
               </button>
@@ -1584,11 +1575,10 @@ export default function ChatPage() {
               {/* Chat history toggle button */}
               <button
                 onClick={() => setShowHistory(prev => !prev)}
-                className={`p-1.5 rounded-lg transition-colors relative ${
-                  showHistory
+                className={`p-1.5 rounded-lg transition-colors relative ${showHistory
                     ? "bg-primary/15 text-primary"
                     : "hover:bg-secondary text-muted-foreground hover:text-foreground"
-                }`}
+                  }`}
                 title={showHistory ? "Close history" : "Open chat history"}
                 aria-label="Chat history"
               >
@@ -1637,7 +1627,7 @@ export default function ChatPage() {
                   <div>
                     <p className="text-sm font-semibold">No chat history yet</p>
                     <p className="text-xs text-muted-foreground mt-1 max-w-[210px]">
-                      Your conversations about &ldquo;{doc.title}&rdquo; will appear here so you can revisit them anytime.
+                      Your conversations about "{doc.title}" will appear here so you can revisit them anytime.
                     </p>
                   </div>
                   <button
@@ -1656,11 +1646,10 @@ export default function ChatPage() {
                       <div
                         key={c.id}
                         onClick={() => !isLoading && handleSelectConversation(c.id)}
-                        className={`group relative p-3 rounded-xl border text-left cursor-pointer transition-all ${
-                          isActive
+                        className={`group relative p-3 rounded-xl border text-left cursor-pointer transition-all ${isActive
                             ? "bg-primary/10 border-primary/40 shadow-xs"
                             : "bg-background/80 hover:bg-secondary/60 border-border/70 hover:border-primary/30"
-                        }`}
+                          }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -1723,7 +1712,7 @@ export default function ChatPage() {
                       <MessageSquare size={20} className="text-primary" />
                     </div>
                     <div>
-                      <p className="font-semibold text-sm">Ask about &ldquo;{doc.title}&rdquo;</p>
+                      <p className="font-semibold text-sm">Ask about "{doc.title}"</p>
                       <p className="text-xs text-muted-foreground mt-1">Select text in the reader to ask about it, or type a question below.</p>
                     </div>
                     <div className="grid grid-cols-1 gap-2 text-left mt-2">
@@ -1769,9 +1758,9 @@ export default function ChatPage() {
                         content={stream.answer || ""}
                         isStreaming
                         sources={stream.sources}
-                        onSaveToNotes={() => {}}
-                        onInDetail={() => {}}
-                        onDiscuss={() => {}}
+                        onSaveToNotes={() => { }}
+                        onInDetail={() => { }}
+                        onDiscuss={() => { }}
                         onJumpToPage={handleJumpToPage}
                       />
                     </div>

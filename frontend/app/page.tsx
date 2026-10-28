@@ -56,7 +56,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    void fetchDocuments();
+    fetchDocuments();
   }, [fetchDocuments]);
 
   useEffect(() => {
@@ -202,21 +202,19 @@ export default function Home() {
         <div className="flex items-center gap-2 mb-6 border-b border-border pb-3">
           <button
             onClick={() => setFilter("all")}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              filter === "all"
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${filter === "all"
                 ? "bg-primary text-primary-foreground shadow-2xs"
                 : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-            }`}
+              }`}
           >
             All Documents ({documents.length})
           </button>
           <button
             onClick={() => setFilter("favorites")}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              filter === "favorites"
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${filter === "favorites"
                 ? "bg-amber-500 text-white shadow-2xs"
                 : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-            }`}
+              }`}
           >
             <Star size={13} className={filter === "favorites" ? "fill-white" : "fill-amber-400 text-amber-500"} />
             Favorites ({favoritesCount})
@@ -280,11 +278,10 @@ export default function Home() {
                     type="button"
                     aria-label={doc.is_favorite ? "Remove from favorites" : "Mark as favorite"}
                     onClick={(e) => handleToggleFavorite(e, doc)}
-                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                      doc.is_favorite
+                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${doc.is_favorite
                         ? "text-amber-500 hover:bg-amber-500/15"
                         : "text-muted-foreground/30 hover:text-amber-500 hover:bg-secondary"
-                    }`}
+                      }`}
                     title={doc.is_favorite ? "Starred Favorite" : "Mark as favorite"}
                   >
                     <Star
@@ -597,18 +594,16 @@ export default function Home() {
         <div
           role="status"
           aria-live="polite"
-          className={`fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-md z-50 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border text-xs font-medium animate-in fade-in slide-in-from-bottom-5 duration-200 backdrop-blur-md ${
-            toast.type === "success"
+          className={`fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-md z-50 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border text-xs font-medium animate-in fade-in slide-in-from-bottom-5 duration-200 backdrop-blur-md ${toast.type === "success"
               ? "bg-card border-emerald-500/30 text-foreground"
               : "bg-destructive text-destructive-foreground border-destructive/40"
-          }`}
+            }`}
         >
           <div
-            className={`h-6 w-6 rounded-full flex items-center justify-center shrink-0 ${
-              toast.type === "success"
+            className={`h-6 w-6 rounded-full flex items-center justify-center shrink-0 ${toast.type === "success"
                 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
                 : "bg-white/20 text-white"
-            }`}
+              }`}
           >
             <Check size={14} strokeWidth={2.5} />
           </div>
